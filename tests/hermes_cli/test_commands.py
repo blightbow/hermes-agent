@@ -163,6 +163,32 @@ class TestDerivedDicts:
         for cmd, desc in COMMANDS.items():
             assert isinstance(desc, str) and len(desc) > 0, f"{cmd} has empty description"
 
+    def test_every_cli_command_has_dispatch_handler(self):
+        """Every non-gateway_only CommandDef must have a handler branch in
+        process_command().  When this fails, a command is showing up in help
+        and autocomplete but returning "Unknown command" at runtime.
+
+        See #22960, #27603, #50618 for prior instances of this bug class.
+        """
+        import inspect
+        import re
+
+        from cli import HermesCLI
+
+        src = inspect.getsource(HermesCLI.process_command)
+        # Canonical forms:  elif canonical == "foo":  /  if canonical in {"foo", "bar"}:
+        dispatched = set(re.findall(r'canonical\s*(?:==|in\s+\{)\s*"([^"]+)"', src))
+        dispatched.update(re.findall(r"canonical\s*(?:==|in\s+\{)\s*'([^']+)'", src))
+
+        registry_cli = {cmd.name for cmd in COMMAND_REGISTRY if not cmd.gateway_only}
+        missing = registry_cli - dispatched
+
+        assert not missing, (
+            f"commands in COMMAND_REGISTRY with no dispatch handler: {sorted(missing)}. "
+            "Add an `elif canonical == \"<name>\":` branch to HermesCLI.process_command() "
+            "in cli.py, or mark the command gateway_only=True if it is not meant for CLI."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Gateway helpers
